@@ -93,7 +93,7 @@ function checkSend(r, b, opt) {
   // 영수증 사진에 들어가는 글자
   const fields = [
     ['상호', b.name], ['대표자', b.owner], ['사업장 소재지', b.addr], ['업태', b.bizType], ['종목', b.bizItem], ['연락처', b.phone], ['입금 계좌', b.bank],
-    ['받는 분 이름', r.customer?.name], ['받는 분 전화', r.customer?.phone], ['받는 분 이메일', r.customer?.email], ['받는 분 주소', r.customer?.addr], ['비고', r.note],
+    ['받는 분 이름', r.customer?.name], ['받는 분 전화', r.customer?.phone], ['받는 분 이메일', r.customer?.email], ['비고', r.note],
     ...its.flatMap((l, i) => [[`품목 ${i + 1}`, l.name], [`품목 ${i + 1} 단위`, l.unit]]),
   ];
   for (const [k, v] of fields) {

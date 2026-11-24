@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
@@ -100,7 +100,7 @@ async function receiptBlob(r) {
   const e = { lines: (r.items || []).map((l) => ({ name: l.name, qty: l.qty, unit: l.unit || '', price: l.price })), trip: '', discount: r.discount || '', vat: !!r.vat, note: r.note || '' };
   const last = [...(r.payments || [])].sort((a, b2) => (b2.date || '').localeCompare(a.date || ''))[0];
   const s = pickSeal(b, r.sealId);
-  return renderFormReceipt(e, T, { id: r.id, no: r.no, doneAt: r.date }, { name: r.customer?.name || '', phone: r.customer?.phone || '', email: r.customer?.email || '', addr: r.customer?.addr || '' }, { ...b, seal: s ? s.img : '' }, paidOf(r), r.note || (last && last.method) || '');
+  return renderFormReceipt(e, T, { id: r.id, no: r.no, doneAt: r.date }, { name: r.customer?.name || '' }, { ...b, seal: s ? s.img : '' }, paidOf(r), r.note || (last && last.method) || '');
 }
 
 // 문자·이메일용 글 영수증
@@ -189,8 +189,8 @@ async function viewEdit(id, copyFrom) {
       <label for="e_name">받는 분(공급받는자)</label><input id="e_name" list="custList" value="${esc(r.customer.name)}" placeholder="이름 또는 상호" autocomplete="off">
       <datalist id="custList">${custs.map((c) => `<option value="${esc(c.name)}">${esc(c.phone || '')}</option>`).join('')}</datalist>
       <div class="grid2"><div><label for="e_phone">전화 (선택)</label><input id="e_phone" type="tel" inputmode="tel" value="${esc(r.customer.phone)}"></div><div><label for="e_email">이메일 (선택)</label><input id="e_email" type="email" inputmode="email" value="${esc(r.customer.email)}"></div></div>
-      <label for="e_addr">주소 (선택)</label><input id="e_addr" value="${esc(r.customer.addr || '')}" placeholder="넣으면 영수증 받는 분 칸에 나옵니다">
-      <div class="muted" style="font-size:12px;margin-top:4px">받는 분 전화·이메일·주소는 넣은 것만 영수증 위쪽에 표시됩니다.</div></div>
+      <label for="e_addr">주소 (선택)</label><input id="e_addr" value="${esc(r.customer.addr || '')}">
+      <div class="muted" style="font-size:12px;margin-top:4px">전화·이메일·주소는 기록과 보내기에만 쓰고 영수증 그림에는 나오지 않습니다.</div></div>
     <div class="card"><h2>품목</h2><div id="e_lines"></div>
       <div class="row wrap" style="margin-top:6px"><button class="btn small" id="e_add" type="button">+ 품목</button>
         ${items.length ? `<select id="e_pick" style="width:auto;flex:1"><option value="">자주 쓰는 품목에서 고르기</option>${items.map((it) => `<option value="${it.id}">${esc(it.name)}${it.price !== '' && it.price != null ? ' ' + won(it.price) : ''}</option>`).join('')}</select>` : '<a class="btn small" href="#/items">📦 자주 쓰는 품목 등록</a>'}</div>
@@ -476,15 +476,14 @@ async function viewSettings() {
   $('#sg_make').onclick = () => {
     const nm = $('#sg_name').value.trim();
     if (!nm) { toast('도장에 넣을 이름을 써 주세요'); return; }
-    const company = $('#s_name').value.trim();
-    const styles = SEAL_STYLES.filter((st) => st.kind !== 'company' || company);
-    $('#sg_prev').innerHTML = `<div class="muted" style="font-size:13px;margin:8px 0 4px">마음에 드는 모양을 누르면 도장 목록에 추가됩니다.</div><div class="seal-list">${styles.map((st) => {
-      const img = makeSeal(nm, st.kind, company);
-      return `<button class="seal-item pick" type="button" data-sk="${st.kind}" data-img="${img}"><img src="${img}" alt="${esc(nm)} ${st.label} 도장"><div class="seal-name">${st.label}</div></button>`;
+    const group = (gname) => `<h3 class="seal-h">${gname === '인감' ? '인감도장형' : '직인형'}</h3><div class="seal-list">${SEAL_STYLES.filter((st) => st.group === gname).map((st) => {
+      const img = makeSeal(nm, st.kind);
+      return `<button class="seal-item pick" type="button" data-sk="${st.kind}" data-img="${img}"><img src="${img}" alt="${esc(nm)} ${st.group} ${st.label} 도장"><div class="seal-name">${st.label}</div></button>`;
     }).join('')}</div>`;
+    $('#sg_prev').innerHTML = `<div class="muted" style="font-size:13px;margin:8px 0 4px">마음에 드는 모양을 누르면 도장 목록에 추가됩니다.</div>${group('인감')}${group('직인')}`;
     $('#sg_prev').querySelectorAll('[data-sk]').forEach((bt) => { bt.onclick = () => {
       const st = SEAL_STYLES.find((x) => x.kind === bt.dataset.sk);
-      const s = { id: uid(), name: `${nm} (${st.label})`, kind: st.kind, img: bt.dataset.img };
+      const s = { id: uid(), name: `${nm} (${st.group === '인감' && st.kind === 'circle' ? st.label : st.group + ' ' + st.label})`, kind: st.kind, img: bt.dataset.img };
       seals.push(s);
       if (sealId === 'none' || !seals.some((x) => x.id === sealId)) sealId = s.id;
       $('#sg_prev').innerHTML = '';

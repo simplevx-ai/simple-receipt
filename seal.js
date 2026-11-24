@@ -1,14 +1,18 @@
 /* 간이영수증 앱 — 이름으로 도장 이미지 만들기
-   발급하는 사람 이름(또는 상호)을 넣으면 원형·사각·타원·상호 원형 도장을 그려 투명 PNG로 만든다.
+   발급하는 사람 이름(또는 상호)을 넣으면 인감형(원형·두 줄 테·굵은 테·타원)과 직인형(사각·두 줄 사각·둥근 모서리·붉은 바탕) 도장을 그려 투명 PNG로 만든다.
    만든 도장은 설정 'biz'의 seals 목록에 저장하고, 영수증마다 골라 쓴다. */
 
 const SEAL_RED = '#D0202F';
 const SEAL_FONT = '"Noto Serif KR","Noto Serif CJK KR","Nanum Myeongjo","Batang","AppleMyungjo",serif';
 const SEAL_STYLES = [
-  { kind: 'circle', label: '원형 기본' },
-  { kind: 'square', label: '사각' },
-  { kind: 'oval', label: '타원' },
-  { kind: 'company', label: '상호 원형' },
+  { kind: 'circle', label: '원형 기본', group: '인감' },
+  { kind: 'ingam2', label: '두 줄 테', group: '인감' },
+  { kind: 'ingam3', label: '굵은 테', group: '인감' },
+  { kind: 'oval', label: '타원', group: '인감' },
+  { kind: 'square', label: '사각', group: '직인' },
+  { kind: 'square2', label: '두 줄 사각', group: '직인' },
+  { kind: 'rsquare', label: '둥근 모서리', group: '직인' },
+  { kind: 'solid', label: '붉은 바탕', group: '직인' },
 ];
 
 // 이름 글자를 도장 칸에 배치: 2자→세로 2칸, 3자→'인'을 붙여 2×2, 4자→2×2(오른쪽 줄부터 위→아래)
@@ -60,52 +64,45 @@ function sealTexture(g, S, seed) {
   g.putImageData(d, 0, 0);
 }
 
-// 상호를 원 둘레에 쓴다(위쪽 반원)
-function sealRing(g, text, cx, cy, r, size) {
-  const ch = [...String(text || '').replace(/\s+/g, '')].slice(0, 12);
-  if (!ch.length) return;
-  g.save();
-  g.font = `900 ${size}px ${SEAL_FONT}`;
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  const span = Math.min(Math.PI * 1.5, ch.length * (size * 1.05) / r);
-  const start = -Math.PI / 2 - span / 2 + span / ch.length / 2;
-  ch.forEach((c, i) => {
-    const a = start + (span / ch.length) * i;
-    g.save();
-    g.translate(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    g.rotate(a + Math.PI / 2);
-    g.fillText(c, 0, 0);
-    g.restore();
-  });
-  g.restore();
-}
+const ring = (g, r, w) => { g.lineWidth = w; g.beginPath(); g.arc(120, 120, r, 0, Math.PI * 2); g.stroke(); };
+function rrect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 
-/* 도장 그리기 → PNG dataURL. kind: circle | square | oval | company */
-function makeSeal(name, kind = 'circle', company = '') {
+/* 도장 그리기 → PNG dataURL (240×240, 투명 바탕)
+   인감형: circle(원형 기본) · ingam2(두 줄 테) · ingam3(굵은 테) · oval(타원)
+   직인형: square(사각) · square2(두 줄 사각) · rsquare(둥근 모서리) · solid(붉은 바탕 흰 글씨) */
+function makeSeal(name, kind = 'circle') {
   const S = 240, cv = document.createElement('canvas'); cv.width = cv.height = S;
   const g = cv.getContext('2d');
   g.fillStyle = SEAL_RED; g.strokeStyle = SEAL_RED;
   const grid = sealGrid(name);
-  if (kind === 'square') {
-    g.lineWidth = 14; g.strokeRect(14, 14, S - 28, S - 28);
-    sealFill(g, grid, 34, 34, S - 68, S - 68);
+  const inCircle = (r) => { const w = r * 1.38; sealFill(g, grid, S / 2 - w / 2, S / 2 - w / 2, w, w); };
+  if (kind === 'ingam2') {
+    ring(g, S / 2 - 7, 10); ring(g, S / 2 - 22, 3); inCircle(S / 2 - 30);
+  } else if (kind === 'ingam3') {
+    ring(g, S / 2 - 12, 20); inCircle(S / 2 - 28);
   } else if (kind === 'oval') {
     g.lineWidth = 11; g.beginPath(); g.ellipse(S / 2, S / 2, S * 0.3, S / 2 - 9, 0, 0, Math.PI * 2); g.stroke();
     const ch = [...String(name || '').replace(/\s+/g, '')].slice(0, 4);
-    const col = { cols: 1, rows: Math.max(ch.length, 1), cells: ch.length ? ch : ['印'] };
-    const h = S - 76;
-    sealFill(g, col, S / 2 - S * 0.17, 38, S * 0.34, h);
-  } else if (kind === 'company') {
-    g.lineWidth = 9; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 8, 0, Math.PI * 2); g.stroke();
-    g.lineWidth = 4; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 58, 0, Math.PI * 2); g.stroke();
-    sealRing(g, company || name, S / 2, S / 2, S / 2 - 33, 34);
-    const inner = (S / 2 - 66) * 1.3;
-    sealFill(g, sealGrid(name), S / 2 - inner / 2, S / 2 - inner / 2, inner, inner);
+    sealFill(g, { cols: 1, rows: Math.max(ch.length, 1), cells: ch.length ? ch : ['印'] }, S / 2 - S * 0.17, 38, S * 0.34, S - 76);
+  } else if (kind === 'square') {
+    g.lineWidth = 14; g.strokeRect(14, 14, S - 28, S - 28);
+    sealFill(g, grid, 34, 34, S - 68, S - 68);
+  } else if (kind === 'square2') {
+    g.lineWidth = 12; g.strokeRect(10, 10, S - 20, S - 20);
+    g.lineWidth = 3; g.strokeRect(26, 26, S - 52, S - 52);
+    sealFill(g, grid, 38, 38, S - 76, S - 76);
+  } else if (kind === 'rsquare') {
+    g.lineWidth = 13; rrect(g, 13, 13, S - 26, S - 26, 34); g.stroke();
+    sealFill(g, grid, 36, 36, S - 72, S - 72);
+  } else if (kind === 'solid') {
+    rrect(g, 8, 8, S - 16, S - 16, 14); g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    g.lineWidth = 4; g.strokeRect(22, 22, S - 44, S - 44);
+    sealFill(g, grid, 34, 34, S - 68, S - 68);
+    g.globalCompositeOperation = 'source-over';
   } else {
-    // 기본형: 무난한 둥근 성명인(굵은 테 하나 + 이름)
-    g.lineWidth = 12; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 8, 0, Math.PI * 2); g.stroke();
-    const inner = (S / 2 - 20) * 1.38; // 원 안에 들어가는 네모
-    sealFill(g, grid, S / 2 - inner / 2, S / 2 - inner / 2, inner, inner);
+    // 원형 기본: 무난한 둥근 성명인(굵은 테 하나 + 이름)
+    ring(g, S / 2 - 8, 12); inCircle(S / 2 - 20);
   }
   if (kind !== 'circle') { // 기본형은 깔끔하게, 나머지는 찍은 느낌을 조금
     let seed = 7; for (const c of String(name) + kind) seed = (seed * 31 + c.charCodeAt(0)) % 2147483647;
