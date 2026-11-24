@@ -133,7 +133,12 @@ a.card { color: var(--ink); }
 .seg label { flex: 1; margin: 0; }
 .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .seg span { display: block; text-align: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 4px; font-size: 14px; color: var(--ink); background: var(--card); cursor: pointer; }
-.seg input:checked + span { background: var(--navy); color: #fff; border-color: var(--navy); font-weight: 700; }
+.seg span { opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.seg input:checked + span { background: #FFC83D; color: #1A1300; border: 2px solid #C98A00; font-weight: 800; opacity: 1; box-shadow: 0 2px 8px rgba(201, 138, 0, .35); }
+.seg input:checked + span::before { content: '✓ '; }
+@media (prefers-color-scheme: dark) {
+  .seg input:checked + span { background: #FFD45C; color: #1A1300; border-color: #FFF0B8; box-shadow: 0 0 0 2px rgba(255, 212, 92, .35); }
+}
 .seg input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }
 .errbox { margin-top: 10px; border: 2px solid #D64545; background: #FFE8E8; color: #5A0B0B; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
 .errbox ul, .logrow .why { margin: 6px 0 0; padding-left: 18px; }
