@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1F4B">
+  <meta name="description" content="간이영수증 — 실제 영수증 양식으로 만들어 문자·카톡·이메일로 보내기">
+  <title>간이영수증</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <button class="back" id="backBtn" aria-label="뒤로" hidden>‹</button>
+    <h1 id="title">간이영수증</h1>
+  </header>
+  <main id="view" aria-live="polite"></main>
+  <nav class="tabs" aria-label="메뉴">
+    <a href="#/" data-tab="list"><span>🧾</span>영수증</a>
+    <a href="#/new" data-tab="new"><span>✍️</span>새로 쓰기</a>
+    <a href="#/items" data-tab="items"><span>📦</span>품목</a>
+    <a href="#/settings" data-tab="settings"><span>⚙️</span>설정</a>
+  </nav>
+  <div id="toast" role="status"></div>
+  <script src="form.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
