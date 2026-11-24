@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
@@ -100,7 +100,7 @@ async function receiptBlob(r) {
   const e = { lines: (r.items || []).map((l) => ({ name: l.name, qty: l.qty, unit: l.unit || '', price: l.price })), trip: '', discount: r.discount || '', vat: !!r.vat, note: r.note || '' };
   const last = [...(r.payments || [])].sort((a, b2) => (b2.date || '').localeCompare(a.date || ''))[0];
   const s = pickSeal(b, r.sealId);
-  return renderFormReceipt(e, T, { id: r.id, no: r.no, doneAt: r.date }, { name: r.customer?.name || '' }, { ...b, seal: s ? s.img : '' }, paidOf(r), r.note || (last && last.method) || '');
+  return renderFormReceipt(e, T, { id: r.id, no: r.no, doneAt: r.date }, { name: r.customer?.name || '', phone: r.customer?.phone || '', email: r.customer?.email || '', addr: r.customer?.addr || '' }, { ...b, seal: s ? s.img : '' }, paidOf(r), r.note || (last && last.method) || '');
 }
 
 // 문자·이메일용 글 영수증
@@ -125,6 +125,7 @@ const routes = [
   [/^#\/r\/([\w-]+)$/, 'list', (m) => viewReceipt(m[1])],
   [/^#\/items$/, 'items', viewItems],
   [/^#\/settings$/, 'settings', viewSettings],
+  [/^#\/sent$/, 'settings', viewSent],
 ];
 async function render() {
   const h = (location.hash || '#/').split('?')[0];
@@ -175,7 +176,7 @@ async function viewList() {
 /* ───────── 쓰기·고치기 ───────── */
 async function viewEdit(id, copyFrom) {
   const [r0, src, custs, items, biz] = await Promise.all([id ? DB.get('receipts', id) : null, copyFrom ? DB.get('receipts', copyFrom) : null, DB.all('customers'), DB.all('items'), bizInfo()]);
-  const seals = sealList(biz);
+  const seals = sealList(biz).length ? sealList(biz) : (biz.owner ? [{ id: 'auto', name: `${biz.owner} (원형 기본·자동)`, img: makeSeal(biz.owner, 'circle') }] : []);
   setTitle(id ? '영수증 고치기' : '새 영수증', true);
   if (id && !r0) { view().innerHTML = '<div class="empty">영수증을 찾을 수 없습니다.</div>'; return; }
   const base = r0 || (src ? { customer: { ...src.customer }, items: src.items.map((l) => ({ ...l })), discount: src.discount, vat: src.vat, note: '' } : {});
@@ -187,7 +188,9 @@ async function viewEdit(id, copyFrom) {
     <div class="card"><div class="grid2"><div><label for="e_date">작성일</label><input id="e_date" type="date" value="${esc(r.date)}"></div><div><label>번호</label><input value="${esc(r.no || '저장할 때 자동')}" disabled></div></div>
       <label for="e_name">받는 분(공급받는자)</label><input id="e_name" list="custList" value="${esc(r.customer.name)}" placeholder="이름 또는 상호" autocomplete="off">
       <datalist id="custList">${custs.map((c) => `<option value="${esc(c.name)}">${esc(c.phone || '')}</option>`).join('')}</datalist>
-      <div class="grid2"><div><label for="e_phone">전화 (선택)</label><input id="e_phone" type="tel" inputmode="tel" value="${esc(r.customer.phone)}"></div><div><label for="e_email">이메일 (선택)</label><input id="e_email" type="email" inputmode="email" value="${esc(r.customer.email)}"></div></div></div>
+      <div class="grid2"><div><label for="e_phone">전화 (선택)</label><input id="e_phone" type="tel" inputmode="tel" value="${esc(r.customer.phone)}"></div><div><label for="e_email">이메일 (선택)</label><input id="e_email" type="email" inputmode="email" value="${esc(r.customer.email)}"></div></div>
+      <label for="e_addr">주소 (선택)</label><input id="e_addr" value="${esc(r.customer.addr || '')}" placeholder="넣으면 영수증 받는 분 칸에 나옵니다">
+      <div class="muted" style="font-size:12px;margin-top:4px">받는 분 전화·이메일·주소는 넣은 것만 영수증 위쪽에 표시됩니다.</div></div>
     <div class="card"><h2>품목</h2><div id="e_lines"></div>
       <div class="row wrap" style="margin-top:6px"><button class="btn small" id="e_add" type="button">+ 품목</button>
         ${items.length ? `<select id="e_pick" style="width:auto;flex:1"><option value="">자주 쓰는 품목에서 고르기</option>${items.map((it) => `<option value="${it.id}">${esc(it.name)}${it.price !== '' && it.price != null ? ' ' + won(it.price) : ''}</option>`).join('')}</select>` : '<a class="btn small" href="#/items">📦 자주 쓰는 품목 등록</a>'}</div>
@@ -196,7 +199,7 @@ async function viewEdit(id, copyFrom) {
     ${id ? '' : `<div class="card"><h2>받은 금액</h2><div class="grid2"><div><input id="e_paid" type="number" inputmode="numeric" placeholder="합계와 같으면 비워 두기"></div><div><select id="e_method">${opts(METHODS, '계좌이체')}</select></div></div>
       <label class="row" style="margin-top:8px;color:var(--ink);font-size:15px"><input type="checkbox" id="e_unpaid" style="width:22px;min-height:22px;flex:none"> 아직 안 받음 → '청구' 영수증</label></div>`}
     <div class="card"><label for="e_note">비고 (선택, 영수증 비고 칸)</label><input id="e_note" value="${esc(r.note)}" placeholder="비우면 결제수단이 들어갑니다">
-      <label for="e_seal">발급자 도장</label><div class="row"><select id="e_seal" style="flex:1">${(() => { const cur = r.sealId || defaultSealId(biz); return seals.map((s) => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('') + `<option value="none"${cur === 'none' ? ' selected' : ''}>도장 없이 (인)</option>`; })()}</select><img id="e_sealimg" alt="" style="width:44px;height:44px"></div>
+      <label for="e_seal">발급자 도장</label><div class="row"><select id="e_seal" style="flex:1">${(() => { const cur = (r.sealId && (r.sealId === 'none' || seals.some((s) => s.id === r.sealId))) ? r.sealId : (seals.find((s) => s.id === biz.sealId) || seals[0] || { id: 'none' }).id; return seals.map((s) => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('') + `<option value="none"${cur === 'none' ? ' selected' : ''}>도장 없이 (인)</option>`; })()}</select><img id="e_sealimg" alt="" style="width:44px;height:44px"></div>
       ${seals.length ? '' : '<div class="muted" style="font-size:13px;margin-top:4px">⚙️ 설정 → 도장에서 이름으로 도장을 만들 수 있습니다.</div>'}</div>
     <button class="btn primary block" id="e_save" type="button">🧾 저장하고 영수증 보기</button>`;
   const lines = r.items.map((l) => ({ ...l }));
@@ -221,7 +224,7 @@ async function viewEdit(id, copyFrom) {
   };
   $('#e_disc').oninput = calc; $('#e_vat').onchange = calc;
   // 받는 분 이름을 고르면 저장된 전화·이메일을 채운다
-  $('#e_name').onchange = () => { const c = custs.find((x) => x.name === $('#e_name').value.trim()); if (c) { if (!$('#e_phone').value) $('#e_phone').value = c.phone || ''; if (!$('#e_email').value) $('#e_email').value = c.email || ''; } };
+  $('#e_name').onchange = () => { const c = custs.find((x) => x.name === $('#e_name').value.trim()); if (c) { if (!$('#e_phone').value) $('#e_phone').value = c.phone || ''; if (!$('#e_email').value) $('#e_email').value = c.email || ''; if (!$('#e_addr').value) $('#e_addr').value = c.addr || ''; } };
   drawLines();
   const showSeal = () => { const s = seals.find((x) => x.id === $('#e_seal').value); $('#e_sealimg').src = s ? s.img : ''; $('#e_sealimg').style.visibility = s ? 'visible' : 'hidden'; };
   $('#e_seal').onchange = showSeal; showSeal();
@@ -233,7 +236,7 @@ async function viewEdit(id, copyFrom) {
     const email = $('#e_email').value.trim();
     if (email && !isEmail(email)) { toast('이메일 형식을 확인해 주세요'); return; }
     const now = nowISO(), date = $('#e_date').value || todayStr();
-    const out = { ...r, id: r.id || uid(), date, customer: { name: $('#e_name').value.trim(), phone: $('#e_phone').value.trim(), email }, items: its, discount: $('#e_disc').value === '' ? '' : +$('#e_disc').value, vat: $('#e_vat').checked, note: $('#e_note').value.trim(), sealId: $('#e_seal').value, updatedAt: now };
+    const out = { ...r, id: r.id || uid(), date, customer: { name: $('#e_name').value.trim(), phone: $('#e_phone').value.trim(), email, addr: $('#e_addr').value.trim() }, items: its, discount: $('#e_disc').value === '' ? '' : +$('#e_disc').value, vat: $('#e_vat').checked, note: $('#e_note').value.trim(), sealId: seals.length ? $('#e_seal').value : '', updatedAt: now }; // 고를 도장이 없었으면 비워 둠 → 나중에 만든 기본 도장이 찍힘
     if (!out.no) out.no = await nextNo(date);
     if (!out.createdAt) out.createdAt = now;
     if (!id) {
@@ -248,7 +251,7 @@ async function viewEdit(id, copyFrom) {
     if (out.customer.name) {
       const cs = await DB.all('customers');
       const c = cs.find((x) => x.name === out.customer.name) || { id: uid(), name: out.customer.name };
-      await DB.put('customers', { ...c, phone: out.customer.phone || c.phone || '', email: out.customer.email || c.email || '', lastAt: now });
+      await DB.put('customers', { ...c, phone: out.customer.phone || c.phone || '', email: out.customer.email || c.email || '', addr: out.customer.addr || c.addr || '', lastAt: now });
     }
     for (const l of its) if (l.itemId) { const it = await DB.get('items', l.itemId); if (it) await DB.put('items', { ...it, used: (it.used || 0) + 1 }); }
     toast('저장했습니다');
@@ -256,9 +259,31 @@ async function viewEdit(id, copyFrom) {
   };
 }
 
+/* ───────── 보낸 기록 ───────── */
+const SEND_MODES = ['글+사진', '사진만', '글만'];
+const LOG_OK = ['공유 창에서 보냄', '문자 앱 열림', '메일 앱 열림', '복사함', '복사 창 열림', '저장함'];
+function logRow(x, withNo) {
+  const ok = !x.result || LOG_OK.includes(x.result), color = x.result === '막힘' || x.result === '실패' ? 'var(--red)' : x.result === '취소' ? 'var(--muted)' : 'var(--green)';
+  return `<div class="logrow"><div class="row spread"><span>${esc(new Date(x.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }))} · <b>${esc(x.via || '')}</b>${x.what ? ` <span class="muted">(${esc(x.what)})</span>` : ''}</span><b style="color:${color}">${ok && !x.result ? '보냄' : esc(x.result)}</b></div>
+    ${withNo || x.to ? `<div class="muted">${withNo ? `<a href="#/r/${esc(x.rid)}">No.${esc(x.no)} ${esc(x.name || '')}</a> ` : ''}${x.to ? '→ ' + esc(x.to) : ''}</div>` : ''}
+    ${(x.why || []).length ? `<ul class="why">${x.why.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}</div>`;
+}
+const logCard = (lg) => `<h2>보낸 기록 <span class="muted">(${lg.length}건)</span></h2>${lg.length ? [...lg].reverse().map((x) => logRow(x)).join('') : '<div class="muted">아직 없습니다.</div>'}`;
+async function viewSent() {
+  setTitle('보낸 기록', true);
+  const rs = await DB.all('receipts');
+  const all = rs.flatMap((r) => (r.log || []).map((x) => ({ ...x, rid: r.id, no: r.no, name: r.customer?.name || '' }))).sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const cnt = (f) => all.filter(f).length;
+  view().innerHTML = `<div class="card"><div class="muted" style="font-size:13px">문자·이메일·공유·복사·저장을 누른 기록이 모두 남습니다. 검사에 걸려 막힌 것과 취소한 것도 남습니다.</div>
+      <div class="row wrap" style="margin-top:6px;gap:6px"><span class="badge">전체 ${all.length}</span><span class="badge" style="color:var(--green)">보냄 ${cnt((x) => !x.result || LOG_OK.includes(x.result))}</span><span class="badge" style="color:var(--red)">막힘·실패 ${cnt((x) => x.result === '막힘' || x.result === '실패')}</span><span class="badge">취소 ${cnt((x) => x.result === '취소')}</span></div></div>
+    <div class="card">${all.map((x) => logRow(x, true)).join('') || '<div class="muted">아직 보낸 기록이 없습니다.</div>'}</div>`;
+}
+
 /* ───────── 영수증 보기·입금·보내기 ───────── */
 async function viewReceipt(id) {
   const r = await DB.get('receipts', id);
+  let sendMode = '글+사진';
+  try { sendMode = SEND_MODES.includes(localStorage.getItem('sendMode')) ? localStorage.getItem('sendMode') : '글+사진'; } catch { /* 기본값 */ }
   setTitle('영수증', true);
   if (!r) { view().innerHTML = '<div class="empty">영수증을 찾을 수 없습니다.</div>'; return; }
   const b = await bizInfo();
@@ -274,18 +299,82 @@ async function viewReceipt(id) {
     <div class="card"><h2>📤 보내기</h2>
       <div class="grid2"><div><label for="v_phone">받는 사람 전화</label><input id="v_phone" type="tel" inputmode="tel" value="${esc(r.customer?.phone || '')}"></div><div><label for="v_email">받는 사람 이메일</label><input id="v_email" type="email" inputmode="email" value="${esc(r.customer?.email || '')}"></div></div>
       <div class="muted" style="font-size:12px;margin-top:4px">가족·회사 경리 등 다른 사람에게 보낼 때는 이 칸만 바꾸세요.</div>
-      <button class="btn primary block" id="v_share" type="button" style="margin-top:10px">🖼 영수증 사진 보내기 (문자·카톡·메일)</button>
-      <div class="grid2" style="margin-top:8px"><button class="btn" id="v_sms" type="button">💬 문자(글)</button><button class="btn" id="v_mail" type="button">✉️ 이메일(글)</button>
-        <a class="btn" id="v_save" download="영수증-${esc(r.no)}.png">⬇ 사진 저장</a><button class="btn" id="v_copy" type="button">📋 글 복사</button></div></div>
+      <label>보낼 내용</label>
+      <div class="seg" role="radiogroup" aria-label="보낼 내용">${SEND_MODES.map((m) => `<label><input type="radio" name="v_mode" value="${m}"${m === sendMode ? ' checked' : ''}><span>${m === '글+사진' ? '📝🖼 글+사진' : m === '사진만' ? '🖼 사진만' : '📝 글만'}</span></label>`).join('')}</div>
+      <div class="grid2" style="margin-top:10px"><button class="btn primary" id="v_sms" type="button">💬 문자</button><button class="btn primary" id="v_mail" type="button">✉️ 이메일</button>
+        <button class="btn" id="v_app" type="button">📤 카톡·다른 앱</button><button class="btn" id="v_copy" type="button">📋 글 복사</button></div>
+      <button class="btn block" id="v_save" type="button" style="margin-top:8px">⬇ 사진 저장</button>
+      <div id="v_hint" class="muted" style="font-size:12px;margin-top:6px"></div>
+      <div id="v_err" class="errbox" role="alert" hidden></div></div>
     <div class="row"><a class="btn block" href="#/edit/${r.id}">✏️ 고치기</a><a class="btn block" href="#/copy/${r.id}">📄 복사해서 새로</a><button class="btn block danger" id="v_del" type="button">🗑 삭제</button></div>
-    ${(r.log || []).length ? `<div class="card" style="margin-top:12px"><h2>보낸 기록</h2>${r.log.slice(-5).reverse().map((x) => `<div class="muted" style="font-size:13px">${esc(new Date(x.at).toLocaleString('ko-KR'))} · ${esc(x.via)}${x.to ? ' · ' + esc(x.to) : ''}</div>`).join('')}</div>` : ''}`;
+    <div class="card" style="margin-top:12px"><div id="v_log">${logCard(r.log || [])}</div><a href="#/sent" class="muted" style="font-size:13px">📜 전체 보낸 기록 보기 ›</a></div>`;
 
   const blob = await receiptBlob(r);
   const url = URL.createObjectURL(blob);
-  $('#v_img').src = url; $('#v_save').href = url;
+  $('#v_img').src = url;
   const file = new File([blob], `영수증-${r.no}.png`, { type: 'image/png' });
   const text = receiptText(r, b);
-  const log = async (via, to) => { const rr = await DB.get('receipts', id); await DB.put('receipts', { ...rr, log: [...(rr.log || []), { at: nowISO(), via, to: to || '' }].slice(-20) }); };
+  const subject = `[영수증] ${b.name || ''} No.${r.no}`.replace(/\s+/g, ' ').trim();
+  // 보낸 기록: 막힌 것·취소한 것까지 모두 남긴다(지우지 않음)
+  const log = async (x) => {
+    const rr = await DB.get('receipts', id), lg = [...(rr.log || []), { at: nowISO(), ...x }];
+    await DB.put('receipts', { ...rr, log: lg });
+    if ($('#v_log')) $('#v_log').innerHTML = logCard(lg);
+  };
+  const mode = () => (view().querySelector('[name=v_mode]:checked') || {}).value || '글+사진';
+  const hint = () => {
+    const m = mode();
+    $('#v_hint').textContent = m === '글만' ? '문자·이메일 앱이 받는 사람과 글이 채워진 채로 열립니다.'
+      : '사진이 들어가면 폰의 공유 창이 열립니다. 문자는 ‘메시지’, 이메일은 ‘Gmail’을 고르고 받는 사람을 선택하세요(웹앱은 문자 앱에 사진을 직접 붙일 수 없음).';
+  };
+  view().querySelectorAll('[name=v_mode]').forEach((el) => { el.onchange = () => { try { localStorage.setItem('sendMode', mode()); } catch { /* 저장 안 돼도 됨 */ } hint(); $('#v_err').hidden = true; }; });
+  hint();
+  const VIA = { sms: '문자', email: '이메일', app: '카톡·다른 앱', copy: '글 복사', save: '사진 저장' };
+  async function send(channel) {
+    const m = channel === 'copy' ? '글만' : channel === 'save' ? '사진만' : mode();
+    const withText = m !== '사진만', withPhoto = m !== '글만';
+    const to = channel === 'sms' ? digits($('#v_phone').value) : channel === 'email' ? $('#v_email').value.trim() : '';
+    const rr = { ...(await DB.get('receipts', id)) };
+    const errs = checkSend(rr, b, { channel, withText, withPhoto, to, text, blob });
+    const base = { via: VIA[channel], what: m, to, total: totals(rr).total };
+    if (errs.length) {
+      $('#v_err').innerHTML = `<b>보내지 않았습니다. 아래를 고친 뒤 다시 보내 주세요.</b><ul>${errs.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>`;
+      $('#v_err').hidden = false; $('#v_err').scrollIntoView({ block: 'center' });
+      await log({ ...base, result: '막힘', why: errs });
+      alert('⚠️ 보내지 않았습니다\n\n' + errs.map((e) => '• ' + e).join('\n'));
+      return;
+    }
+    $('#v_err').hidden = true;
+    if (channel === 'copy') {
+      try { await navigator.clipboard.writeText(text); toast('영수증 글을 복사했습니다'); await log({ ...base, result: '복사함' }); }
+      catch { prompt('복사해서 쓰세요', text); await log({ ...base, result: '복사 창 열림' }); }
+      return;
+    }
+    if (channel === 'save') {
+      const a = document.createElement('a'); a.href = url; a.download = `영수증-${r.no}.png`; document.body.appendChild(a); a.click(); a.remove();
+      await log({ ...base, result: '저장함' }); return;
+    }
+    if (!withPhoto) {
+      if (channel === 'sms') { await log({ ...base, result: '문자 앱 열림' }); location.href = `sms:${to}?body=${encodeURIComponent(text)}`; return; }
+      if (channel === 'email') { await log({ ...base, result: '메일 앱 열림' }); location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`; return; }
+      if (navigator.share) {
+        try { await navigator.share({ title: subject, text }); await log({ ...base, result: '공유 창에서 보냄' }); }
+        catch (e) { await log({ ...base, result: e && e.name === 'AbortError' ? '취소' : '실패', why: e && e.name !== 'AbortError' ? [String(e.message || e)] : undefined }); }
+      } else { toast('이 기기는 공유가 안 됩니다. ‘글 복사’를 쓰세요'); await log({ ...base, result: '실패', why: ['공유 기능 없음'] }); }
+      return;
+    }
+    // 사진이 들어가는 보내기: 공유 창(메시지·Gmail·카톡 등)
+    const data = { files: [file], title: subject, ...(withText ? { text } : {}) };
+    if (!(navigator.canShare && navigator.canShare(data))) {
+      const why = '이 기기(브라우저)는 사진을 붙여 보낼 수 없습니다. ‘사진 저장’ 후 직접 첨부하거나 ‘글만’을 고르세요';
+      $('#v_err').innerHTML = `<b>${esc(why)}</b>`; $('#v_err').hidden = false;
+      await log({ ...base, result: '실패', why: [why] }); alert('⚠️ ' + why); return;
+    }
+    if (channel === 'sms') toast(`‘메시지’를 고르고 ${to} 에게 보내세요`);
+    if (channel === 'email') toast(`‘Gmail’을 고르고 ${to} 에게 보내세요`);
+    try { await navigator.share(data); await log({ ...base, result: '공유 창에서 보냄' }); toast('보냈습니다(기록 저장)'); }
+    catch (e) { await log({ ...base, result: e && e.name === 'AbortError' ? '취소' : '실패', why: e && e.name !== 'AbortError' ? [String(e.message || e)] : undefined }); }
+  }
 
   if ($('#v_pay')) $('#v_pay').onclick = async () => {
     const amt = Number($('#v_amt').value || left);
@@ -299,24 +388,11 @@ async function viewReceipt(id) {
     const rr = await DB.get('receipts', id);
     await DB.put('receipts', { ...rr, payments: (rr.payments || []).filter((p) => p.id !== bt.dataset.delpay) }); render();
   }; });
-  $('#v_share').onclick = async () => {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: '영수증', text: `영수증 - ${b.name || ''}`.trim() }); await log('사진 공유'); } catch { /* 취소 */ }
-    } else toast('이 기기는 바로 공유가 안 됩니다. ‘사진 저장’ 후 보내 주세요');
-  };
-  $('#v_sms').onclick = async () => {
-    const ph = digits($('#v_phone').value);
-    if (!ph) { toast('받는 사람 전화번호를 넣어 주세요'); return; }
-    await log('문자', ph);
-    location.href = `sms:${ph}?body=${encodeURIComponent(text)}`;
-  };
-  $('#v_mail').onclick = async () => {
-    const em = $('#v_email').value.trim();
-    if (!isEmail(em)) { toast('받는 사람 이메일을 바르게 넣어 주세요'); return; }
-    await log('이메일', em);
-    location.href = `mailto:${encodeURIComponent(em)}?subject=${encodeURIComponent(`[영수증] ${b.name || ''} No.${r.no}`.trim())}&body=${encodeURIComponent(text)}`;
-  };
-  $('#v_copy').onclick = async () => { try { await navigator.clipboard.writeText(text); toast('영수증 글을 복사했습니다'); } catch { prompt('복사해서 쓰세요', text); } };
+  $('#v_sms').onclick = () => send('sms');
+  $('#v_mail').onclick = () => send('email');
+  $('#v_app').onclick = () => send('app');
+  $('#v_copy').onclick = () => send('copy');
+  $('#v_save').onclick = () => send('save');
   $('#v_del').onclick = async () => { if (!confirm(`No.${r.no} 영수증을 지울까요? 되돌릴 수 없습니다.`)) return; await DB.del('receipts', id); toast('지웠습니다'); location.replace('#/'); };
 }
 
@@ -372,6 +448,7 @@ async function viewSettings() {
       <button class="btn primary block" id="s_export" type="button" style="margin-top:10px">⬇ 백업 파일 받기</button>
       <label class="btn block" style="margin-top:8px;color:var(--ink)">⬆ 백업 파일로 복원<input id="s_import" type="file" accept="application/json,.json" hidden></label>
       <div class="row" style="margin-top:8px"><select id="s_y" style="flex:1">${[...new Set([todayStr().slice(0, 4), String(+todayStr().slice(0, 4) - 1)])].map((y) => `<option>${y}</option>`).join('')}</select><button class="btn" id="s_csv" type="button">⬇ 연간 영수증 엑셀(CSV)</button></div></div>
+    <a class="card" href="#/sent" style="display:block;text-decoration:none"><b>📜 보낸 기록 전체 보기 ›</b></a>
     <div class="card"><h2>앱 정보</h2><div class="muted">간이영수증 v${APP_VERSION}<br>폰 홈 화면에 추가: 크롬 ⋮ → '홈 화면에 추가' 또는 '앱 설치'</div></div>`;
   let seals = sealList(b).map((s) => ({ ...s }));
   let sealId = defaultSealId(b);
@@ -414,7 +491,15 @@ async function viewSettings() {
       saveSeals(`'${s.name}' 도장을 추가했습니다`);
     }; });
   };
-  $('#s_save').onclick = async () => { await setSetting('biz', read()); toast('저장했습니다'); };
+  $('#s_save').onclick = async () => {
+    const owner = $('#s_owner').value.trim();
+    if (!seals.length && owner) { // 도장이 없으면 대표자 이름으로 둥근 기본형을 만들어 둔다
+      const s0 = { id: uid(), name: `${owner} (원형 기본)`, kind: 'circle', img: makeSeal(owner, 'circle') };
+      seals.push(s0); sealId = s0.id;
+      await saveSeals('저장했습니다 · 대표자 이름으로 기본 도장을 만들었습니다'); return;
+    }
+    await setSetting('biz', read()); toast('저장했습니다');
+  };
   $('#s_seal').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
     const img = new Image(); img.src = URL.createObjectURL(f);

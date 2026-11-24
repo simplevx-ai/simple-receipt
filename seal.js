@@ -5,7 +5,7 @@
 const SEAL_RED = '#D0202F';
 const SEAL_FONT = '"Noto Serif KR","Noto Serif CJK KR","Nanum Myeongjo","Batang","AppleMyungjo",serif';
 const SEAL_STYLES = [
-  { kind: 'circle', label: '원형' },
+  { kind: 'circle', label: '원형 기본' },
   { kind: 'square', label: '사각' },
   { kind: 'oval', label: '타원' },
   { kind: 'company', label: '상호 원형' },
@@ -102,12 +102,15 @@ function makeSeal(name, kind = 'circle', company = '') {
     const inner = (S / 2 - 66) * 1.3;
     sealFill(g, sealGrid(name), S / 2 - inner / 2, S / 2 - inner / 2, inner, inner);
   } else {
-    g.lineWidth = 13; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 9, 0, Math.PI * 2); g.stroke();
-    const inner = (S / 2 - 22) * 1.36; // 원 안에 들어가는 네모
+    // 기본형: 무난한 둥근 성명인(굵은 테 하나 + 이름)
+    g.lineWidth = 12; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 8, 0, Math.PI * 2); g.stroke();
+    const inner = (S / 2 - 20) * 1.38; // 원 안에 들어가는 네모
     sealFill(g, grid, S / 2 - inner / 2, S / 2 - inner / 2, inner, inner);
   }
-  let seed = 7; for (const c of String(name) + kind) seed = (seed * 31 + c.charCodeAt(0)) % 2147483647;
-  sealTexture(g, S, seed || 1);
+  if (kind !== 'circle') { // 기본형은 깔끔하게, 나머지는 찍은 느낌을 조금
+    let seed = 7; for (const c of String(name) + kind) seed = (seed * 31 + c.charCodeAt(0)) % 2147483647;
+    sealTexture(g, S, seed || 1);
+  }
   return cv.toDataURL('image/png');
 }
 
@@ -122,9 +125,12 @@ function defaultSealId(b) {
   return (list.find((s) => s.id === b.sealId) || list[0] || {}).id || 'none';
 }
 // 영수증에 찍을 도장: 영수증에 고른 것 → 없으면 기본 도장. 'none'이면 (인)
+// 도장을 하나도 안 만들었으면 대표자 이름으로 둥근 기본형을 그때그때 만들어 쓴다
 function pickSeal(b, id) {
   const list = sealList(b);
   const want = id || defaultSealId(b);
-  if (want === 'none') return null;
-  return list.find((s) => s.id === want) || list.find((s) => s.id === defaultSealId(b)) || null;
+  if (want === 'none' && (id === 'none' || b.sealId === 'none')) return null;
+  const found = list.find((s) => s.id === want) || list.find((s) => s.id === defaultSealId(b));
+  if (found) return found;
+  return b.owner ? { id: 'auto', name: `${b.owner} (원형 기본)`, kind: 'circle', img: makeSeal(b.owner, 'circle') } : null;
 }

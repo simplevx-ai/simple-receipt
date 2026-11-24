@@ -35,7 +35,8 @@ async function renderFormReceipt(e, T, j, c, b, paid, method) {
   if (e.vat) items.push({ name: '부가세(10%)', qty: '', price: '', amt: T.vat });
   const nRows = Math.min(Math.max(items.length, 8), 16);
   const RH = 58; // 품목 한 줄 높이
-  const H = 912 + nRows * RH; // 맨 아래 연락처 줄까지 딱 맞춘 높이
+  const nInfo = ((c.phone || c.email) ? 1 : 0) + (c.addr ? 1 : 0);
+  const H = 912 + nRows * RH + (nInfo ? nInfo * 32 + 6 : 0); // 맨 아래 연락처 줄까지 딱 맞춘 높이
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
   const g = cv.getContext('2d');
   g.fillStyle = '#FFFDF7'; g.fillRect(0, 0, W, H); // 영수증 종이색
@@ -60,22 +61,27 @@ async function renderFormReceipt(e, T, j, c, b, paid, method) {
   txt(`${c.name || ''}`, R - 70, 158, { size: 32, align: 'right', bold: true, max: 420 });
   txt('귀하', R, 160, { size: 26, color: INK, align: 'right' });
   line(R - 520, 186, R, 186, 1.5);
+  // 받는 분 정보(연락처·이메일·주소) — 넣은 것만
+  const cInfo = [[c.phone && `연락처 ${c.phone}`, c.email && `이메일 ${c.email}`].filter(Boolean).join('   '), c.addr ? `주소 ${c.addr}` : ''].filter(Boolean);
+  cInfo.forEach((s, i) => txt(s, R, 210 + i * 32, { size: 21, color: '#333', align: 'right', max: IW - 40 }));
+  const extra = cInfo.length ? cInfo.length * 32 + 6 : 0;
 
   // 공급자 칸(4행)
-  let y = 210; const sh = 64, sideW = 56, lab = 160;
+  let y = 210 + extra; const sh = 64, sideW = 56, lab = 160;
   const x0 = L + sideW, half = (R - x0) / 2;
   g.fillStyle = TINT; g.fillRect(L, y, sideW, sh * 4);
   ['공', '급', '자'].forEach((ch, i) => txt(ch, L + sideW / 2, y + sh * 0.85 + i * sh * 1.15, { size: 28, color: INK, align: 'center', bold: true }));
   label('사업자등록번호', x0, y, lab + 40, sh); txt(b.bizNo || '', x0 + lab + 64, y + sh / 2, { size: 30, bold: true, max: IW - lab - 130 });
   label('상    호', x0, y + sh, lab, sh); txt(b.name || '', x0 + lab + 16, y + sh * 1.5, { size: 28, max: half - lab - 24 });
-  label('성    명', x0 + half, y + sh, lab, sh); txt(b.owner || '', x0 + half + lab + 16, y + sh * 1.5, { size: 28, max: half - lab - 100 });
-  let sealOk = false;
+  label('성    명', x0 + half, y + sh, lab, sh); txt(b.owner || '', x0 + half + lab + 16, y + sh * 1.5, { size: 28, max: half - lab - 120 });
+  // (인) 자리에 실제 도장처럼 크게 겹쳐 찍는다
+  txt('(인)', R - 18, y + sh * 1.5, { size: 22, color: INK, align: 'right' });
   if (b.seal) {
     const img = new Image(); img.src = b.seal;
     await new Promise((r) => { img.onload = r; img.onerror = r; });
-    if (img.width) { g.drawImage(img, R - 76, y + sh + 3, 58, 58); sealOk = true; }
+    const SZ = 96;
+    if (img.width) { g.save(); g.globalAlpha = 0.92; g.drawImage(img, R - 58 - SZ / 2, y + sh * 1.5 - SZ / 2, SZ, SZ); g.restore(); }
   }
-  if (!sealOk) txt('(인)', R - 18, y + sh * 1.5, { size: 22, color: INK, align: 'right' });
   label('사업장 소재지', x0, y + sh * 2, lab + 40, sh); txt(b.addr || '', x0 + lab + 64, y + sh * 2.5, { size: 24, max: IW - lab - 130 });
   label('업    태', x0, y + sh * 3, lab, sh); txt(b.bizType || '', x0 + lab + 16, y + sh * 3.5, { size: 26, max: half - lab - 24 });
   label('종    목', x0 + half, y + sh * 3, lab, sh); txt(b.bizItem || '', x0 + half + lab + 16, y + sh * 3.5, { size: 26, max: half - lab - 24 });

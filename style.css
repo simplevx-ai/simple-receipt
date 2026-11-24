@@ -116,6 +116,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); outl
 .viewer .row { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); justify-content: space-between; }
 .empty { text-align: center; color: var(--muted); padding: 28px 10px; }
 .warnbox { border: 2px solid #E8A317; background: #FFF4D6; color: #3A2A00 !important; font-weight: 600; }
+a { color: var(--blue); }
 a.card { color: var(--ink); }
 @media (prefers-color-scheme: dark) {
   .warnbox { background: #3A2E10; border-color: #F5C442; color: #FFE9A8 !important; }
@@ -128,6 +129,18 @@ a.card { color: var(--ink); }
 .seal-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; word-break: keep-all; }
 .seal-h { font-size: 15px; margin: 14px 0 6px; }
 #e_sealimg { background: #FFFDF7; border-radius: 6px; }
+.seg { display: flex; gap: 6px; margin-top: 4px; }
+.seg label { flex: 1; margin: 0; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: block; text-align: center; border: 1px solid var(--line); border-radius: 10px; padding: 9px 4px; font-size: 14px; color: var(--ink); background: var(--card); cursor: pointer; }
+.seg input:checked + span { background: var(--navy); color: #fff; border-color: var(--navy); font-weight: 700; }
+.seg input:focus-visible + span { outline: 2px solid var(--blue); outline-offset: 2px; }
+.errbox { margin-top: 10px; border: 2px solid #D64545; background: #FFE8E8; color: #5A0B0B; border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.errbox ul, .logrow .why { margin: 6px 0 0; padding-left: 18px; }
+@media (prefers-color-scheme: dark) { .errbox { background: #3A1515; color: #FFD6D6; border-color: #FF7A7A; } }
+.logrow { border-top: 1px solid var(--line); padding: 7px 0; font-size: 13px; }
+.logrow:first-of-type { border-top: 0; }
+.logrow .why { color: var(--red); font-size: 12px; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 td, th { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: left; }
 td.r, th.r { text-align: right; }
