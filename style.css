@@ -115,7 +115,19 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--blue); outl
 .viewer img { flex: 1; object-fit: contain; width: 100%; min-height: 0; }
 .viewer .row { padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); justify-content: space-between; }
 .empty { text-align: center; color: var(--muted); padding: 28px 10px; }
-.warnbox { border-color: var(--red); }
+.warnbox { border: 2px solid #E8A317; background: #FFF4D6; color: #3A2A00 !important; font-weight: 600; }
+a.card { color: var(--ink); }
+@media (prefers-color-scheme: dark) {
+  .warnbox { background: #3A2E10; border-color: #F5C442; color: #FFE9A8 !important; }
+}
+.seal-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.seal-item { width: 104px; border: 1px solid var(--line); border-radius: 12px; padding: 8px 6px; background: var(--card); color: var(--ink); text-align: center; font: inherit; }
+.seal-item img { width: 72px; height: 72px; display: block; margin: 0 auto 4px; background: #FFFDF7; border-radius: 8px; }
+.seal-item.on { border: 2px solid var(--blue); }
+.seal-item.pick { cursor: pointer; }
+.seal-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; word-break: keep-all; }
+.seal-h { font-size: 15px; margin: 14px 0 6px; }
+#e_sealimg { background: #FFFDF7; border-radius: 6px; }
 table { width: 100%; border-collapse: collapse; font-size: 14px; }
 td, th { padding: 7px 4px; border-bottom: 1px solid var(--line); text-align: left; }
 td.r, th.r { text-align: right; }

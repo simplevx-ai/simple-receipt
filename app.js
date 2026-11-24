@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
@@ -99,7 +99,8 @@ async function receiptBlob(r) {
   const T = totals(r), b = await bizInfo();
   const e = { lines: (r.items || []).map((l) => ({ name: l.name, qty: l.qty, unit: l.unit || '', price: l.price })), trip: '', discount: r.discount || '', vat: !!r.vat, note: r.note || '' };
   const last = [...(r.payments || [])].sort((a, b2) => (b2.date || '').localeCompare(a.date || ''))[0];
-  return renderFormReceipt(e, T, { id: r.id, no: r.no, doneAt: r.date }, { name: r.customer?.name || '' }, b, paidOf(r), r.note || (last && last.method) || '');
+  const s = pickSeal(b, r.sealId);
+  return renderFormReceipt(e, T, { id: r.id, no: r.no, doneAt: r.date }, { name: r.customer?.name || '' }, { ...b, seal: s ? s.img : '' }, paidOf(r), r.note || (last && last.method) || '');
 }
 
 // 문자·이메일용 글 영수증
@@ -173,7 +174,8 @@ async function viewList() {
 
 /* ───────── 쓰기·고치기 ───────── */
 async function viewEdit(id, copyFrom) {
-  const [r0, src, custs, items] = await Promise.all([id ? DB.get('receipts', id) : null, copyFrom ? DB.get('receipts', copyFrom) : null, DB.all('customers'), DB.all('items')]);
+  const [r0, src, custs, items, biz] = await Promise.all([id ? DB.get('receipts', id) : null, copyFrom ? DB.get('receipts', copyFrom) : null, DB.all('customers'), DB.all('items'), bizInfo()]);
+  const seals = sealList(biz);
   setTitle(id ? '영수증 고치기' : '새 영수증', true);
   if (id && !r0) { view().innerHTML = '<div class="empty">영수증을 찾을 수 없습니다.</div>'; return; }
   const base = r0 || (src ? { customer: { ...src.customer }, items: src.items.map((l) => ({ ...l })), discount: src.discount, vat: src.vat, note: '' } : {});
@@ -193,7 +195,9 @@ async function viewEdit(id, copyFrom) {
       <div class="row spread" style="margin-top:10px"><b>합계</b><b id="e_total" style="font-size:22px">0원</b></div></div>
     ${id ? '' : `<div class="card"><h2>받은 금액</h2><div class="grid2"><div><input id="e_paid" type="number" inputmode="numeric" placeholder="합계와 같으면 비워 두기"></div><div><select id="e_method">${opts(METHODS, '계좌이체')}</select></div></div>
       <label class="row" style="margin-top:8px;color:var(--ink);font-size:15px"><input type="checkbox" id="e_unpaid" style="width:22px;min-height:22px;flex:none"> 아직 안 받음 → '청구' 영수증</label></div>`}
-    <div class="card"><label for="e_note">비고 (선택, 영수증 비고 칸)</label><input id="e_note" value="${esc(r.note)}" placeholder="비우면 결제수단이 들어갑니다"></div>
+    <div class="card"><label for="e_note">비고 (선택, 영수증 비고 칸)</label><input id="e_note" value="${esc(r.note)}" placeholder="비우면 결제수단이 들어갑니다">
+      <label for="e_seal">발급자 도장</label><div class="row"><select id="e_seal" style="flex:1">${(() => { const cur = r.sealId || defaultSealId(biz); return seals.map((s) => `<option value="${s.id}"${s.id === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('') + `<option value="none"${cur === 'none' ? ' selected' : ''}>도장 없이 (인)</option>`; })()}</select><img id="e_sealimg" alt="" style="width:44px;height:44px"></div>
+      ${seals.length ? '' : '<div class="muted" style="font-size:13px;margin-top:4px">⚙️ 설정 → 도장에서 이름으로 도장을 만들 수 있습니다.</div>'}</div>
     <button class="btn primary block" id="e_save" type="button">🧾 저장하고 영수증 보기</button>`;
   const lines = r.items.map((l) => ({ ...l }));
   const readLines = () => view().querySelectorAll('[data-l]').forEach((el) => { const l = lines[+el.dataset.i]; l[el.dataset.l] = ['name', 'unit'].includes(el.dataset.l) ? el.value : (el.value === '' ? '' : +el.value); });
@@ -219,6 +223,8 @@ async function viewEdit(id, copyFrom) {
   // 받는 분 이름을 고르면 저장된 전화·이메일을 채운다
   $('#e_name').onchange = () => { const c = custs.find((x) => x.name === $('#e_name').value.trim()); if (c) { if (!$('#e_phone').value) $('#e_phone').value = c.phone || ''; if (!$('#e_email').value) $('#e_email').value = c.email || ''; } };
   drawLines();
+  const showSeal = () => { const s = seals.find((x) => x.id === $('#e_seal').value); $('#e_sealimg').src = s ? s.img : ''; $('#e_sealimg').style.visibility = s ? 'visible' : 'hidden'; };
+  $('#e_seal').onchange = showSeal; showSeal();
 
   $('#e_save').onclick = async () => {
     readLines();
@@ -227,7 +233,7 @@ async function viewEdit(id, copyFrom) {
     const email = $('#e_email').value.trim();
     if (email && !isEmail(email)) { toast('이메일 형식을 확인해 주세요'); return; }
     const now = nowISO(), date = $('#e_date').value || todayStr();
-    const out = { ...r, id: r.id || uid(), date, customer: { name: $('#e_name').value.trim(), phone: $('#e_phone').value.trim(), email }, items: its, discount: $('#e_disc').value === '' ? '' : +$('#e_disc').value, vat: $('#e_vat').checked, note: $('#e_note').value.trim(), updatedAt: now };
+    const out = { ...r, id: r.id || uid(), date, customer: { name: $('#e_name').value.trim(), phone: $('#e_phone').value.trim(), email }, items: its, discount: $('#e_disc').value === '' ? '' : +$('#e_disc').value, vat: $('#e_vat').checked, note: $('#e_note').value.trim(), sealId: $('#e_seal').value, updatedAt: now };
     if (!out.no) out.no = await nextNo(date);
     if (!out.createdAt) out.createdAt = now;
     if (!id) {
@@ -352,11 +358,14 @@ async function viewSettings() {
       <div class="grid2"><div><label for="s_type">업태</label><input id="s_type" value="${esc(b.bizType || '')}"></div><div><label for="s_item">종목</label><input id="s_item" value="${esc(b.bizItem || '')}"></div></div>
       <div class="grid2"><div><label for="s_phone">연락처</label><input id="s_phone" type="tel" value="${esc(b.phone || '')}"></div><div><label for="s_color">양식 색</label><select id="s_color">${opts(['빨강', '파랑'], b.rcptColor || '빨강')}</select></div></div>
       <label for="s_bank">입금 계좌 (선택)</label><input id="s_bank" value="${esc(b.bank || '')}" placeholder="예: OO은행 000-0000-0000 (예금주)">
-      <h2 style="margin-top:14px">도장 <span class="muted">(선택)</span></h2>
-      <div class="muted" style="font-size:13px">흰 종이에 찍은 도장을 가까이서 찍어 올리면 성명 칸 옆에 들어갑니다(흰 바탕은 자동으로 투명하게). 없으면 "(인)".</div>
-      <div class="row" style="margin-top:8px;align-items:center">${b.seal ? `<img src="${b.seal}" alt="도장" style="width:64px;height:64px;border:1px solid var(--line);border-radius:8px">` : '<span class="muted">등록된 도장 없음</span>'}
-        <label class="btn small" style="color:var(--ink)">📷 도장 사진<input id="s_seal" type="file" accept="image/*" hidden></label>${b.seal ? '<button class="btn small danger" id="s_sealx" type="button">지우기</button>' : ''}</div>
       <button class="btn primary block" id="s_save" type="button" style="margin-top:12px">💾 저장</button></div>
+    <div class="card" id="sealCard"><h2>도장 <span class="muted">(선택)</span></h2>
+      <div class="muted" style="font-size:13px">발급하는 사람 이름으로 도장을 만들어 두면, 영수증 쓸 때 골라서 성명 칸 옆에 찍습니다. ★ 표시가 기본 도장입니다. 없으면 "(인)".</div>
+      <div id="sealList" class="seal-list"></div>
+      <h3 class="seal-h">이름으로 도장 만들기</h3>
+      <div class="row"><input id="sg_name" placeholder="도장에 넣을 이름 (예: 홍길동)" value="${esc(b.owner || '')}" style="flex:1"><button class="btn small primary" id="sg_make" type="button">만들기</button></div>
+      <div id="sg_prev" class="seal-prev"></div>
+      <label class="btn small" style="color:var(--ink);margin-top:8px">📷 찍은 도장 사진으로 등록<input id="s_seal" type="file" accept="image/*" hidden></label></div>
     <div class="card"><h2>백업 (꼭 해 주세요)</h2>
       <div class="muted">영수증은 이 폰에만 저장됩니다. 백업 파일을 받아 구글 드라이브·PC 등에 보관하세요.</div>
       <div class="muted">마지막 백업: ${last ? new Date(last).toLocaleString('ko-KR') : '없음'}</div>
@@ -364,8 +373,47 @@ async function viewSettings() {
       <label class="btn block" style="margin-top:8px;color:var(--ink)">⬆ 백업 파일로 복원<input id="s_import" type="file" accept="application/json,.json" hidden></label>
       <div class="row" style="margin-top:8px"><select id="s_y" style="flex:1">${[...new Set([todayStr().slice(0, 4), String(+todayStr().slice(0, 4) - 1)])].map((y) => `<option>${y}</option>`).join('')}</select><button class="btn" id="s_csv" type="button">⬇ 연간 영수증 엑셀(CSV)</button></div></div>
     <div class="card"><h2>앱 정보</h2><div class="muted">간이영수증 v${APP_VERSION}<br>폰 홈 화면에 추가: 크롬 ⋮ → '홈 화면에 추가' 또는 '앱 설치'</div></div>`;
-  let seal = b.seal || '';
-  const read = () => ({ ...b, bizNo: $('#s_no').value.trim(), name: $('#s_name').value.trim(), owner: $('#s_owner').value.trim(), addr: $('#s_addr').value.trim(), bizType: $('#s_type').value.trim(), bizItem: $('#s_item').value.trim(), phone: $('#s_phone').value.trim(), rcptColor: $('#s_color').value, bank: $('#s_bank').value.trim(), seal });
+  let seals = sealList(b).map((s) => ({ ...s }));
+  let sealId = defaultSealId(b);
+  const read = () => {
+    const out = { ...b, bizNo: $('#s_no').value.trim(), name: $('#s_name').value.trim(), owner: $('#s_owner').value.trim(), addr: $('#s_addr').value.trim(), bizType: $('#s_type').value.trim(), bizItem: $('#s_item').value.trim(), phone: $('#s_phone').value.trim(), rcptColor: $('#s_color').value, bank: $('#s_bank').value.trim(), seals, sealId };
+    delete out.seal; // 예전 한 개짜리 도장 칸은 목록(seals)으로 옮김
+    return out;
+  };
+  const saveSeals = async (msg) => { await setSetting('biz', read()); drawSeals(); if (msg) toast(msg); };
+  const drawSeals = () => {
+    $('#sealList').innerHTML = seals.length ? seals.map((s) => `<div class="seal-item${s.id === sealId ? ' on' : ''}">
+        <img src="${s.img}" alt="${esc(s.name)} 도장"><div class="seal-name">${s.id === sealId ? '★ ' : ''}${esc(s.name)}</div>
+        <div class="row" style="gap:4px;justify-content:center">${s.id === sealId ? '<span class="muted" style="font-size:12px">기본</span>' : `<button class="btn small" data-sdef="${s.id}" type="button">기본</button>`}<button class="btn small danger" data-sdel="${s.id}" type="button" aria-label="${esc(s.name)} 도장 지우기">✕</button></div></div>`).join('')
+      : '<div class="muted" style="margin:8px 0">등록된 도장 없음</div>';
+    view().querySelectorAll('[data-sdef]').forEach((bt) => { bt.onclick = () => { sealId = bt.dataset.sdef; saveSeals('기본 도장을 바꿨습니다'); }; });
+    view().querySelectorAll('[data-sdel]').forEach((bt) => { bt.onclick = () => {
+      const s = seals.find((x) => x.id === bt.dataset.sdel);
+      if (!s || !confirm(`'${s.name}' 도장을 지울까요?`)) return;
+      seals = seals.filter((x) => x.id !== s.id);
+      if (sealId === s.id) sealId = seals[0] ? seals[0].id : 'none';
+      saveSeals('도장을 지웠습니다');
+    }; });
+  };
+  drawSeals();
+  $('#sg_make').onclick = () => {
+    const nm = $('#sg_name').value.trim();
+    if (!nm) { toast('도장에 넣을 이름을 써 주세요'); return; }
+    const company = $('#s_name').value.trim();
+    const styles = SEAL_STYLES.filter((st) => st.kind !== 'company' || company);
+    $('#sg_prev').innerHTML = `<div class="muted" style="font-size:13px;margin:8px 0 4px">마음에 드는 모양을 누르면 도장 목록에 추가됩니다.</div><div class="seal-list">${styles.map((st) => {
+      const img = makeSeal(nm, st.kind, company);
+      return `<button class="seal-item pick" type="button" data-sk="${st.kind}" data-img="${img}"><img src="${img}" alt="${esc(nm)} ${st.label} 도장"><div class="seal-name">${st.label}</div></button>`;
+    }).join('')}</div>`;
+    $('#sg_prev').querySelectorAll('[data-sk]').forEach((bt) => { bt.onclick = () => {
+      const st = SEAL_STYLES.find((x) => x.kind === bt.dataset.sk);
+      const s = { id: uid(), name: `${nm} (${st.label})`, kind: st.kind, img: bt.dataset.img };
+      seals.push(s);
+      if (sealId === 'none' || !seals.some((x) => x.id === sealId)) sealId = s.id;
+      $('#sg_prev').innerHTML = '';
+      saveSeals(`'${s.name}' 도장을 추가했습니다`);
+    }; });
+  };
   $('#s_save').onclick = async () => { await setSetting('biz', read()); toast('저장했습니다'); };
   $('#s_seal').onchange = async (ev) => {
     const f = ev.target.files[0]; if (!f) return;
@@ -377,10 +425,14 @@ async function viewSettings() {
     const d = g.getImageData(0, 0, 200, 200);
     for (let i = 0; i < d.data.length; i += 4) if (d.data[i] > 190 && d.data[i + 1] > 190 && d.data[i + 2] > 190) d.data[i + 3] = 0;
     g.putImageData(d, 0, 0);
-    seal = cv.toDataURL('image/png');
-    await setSetting('biz', read()); toast('도장을 등록했습니다'); render();
+    ev.target.value = '';
+    const nm = prompt('이 도장의 이름 (예: 대표 도장)', $('#s_owner').value.trim() ? `${$('#s_owner').value.trim()} (사진)` : '사진 도장');
+    if (nm === null) return;
+    const ns = { id: uid(), name: nm.trim() || '사진 도장', kind: 'photo', img: cv.toDataURL('image/png') };
+    seals.push(ns);
+    if (sealId === 'none' || !seals.some((x) => x.id === sealId)) sealId = ns.id;
+    saveSeals('도장을 등록했습니다');
   };
-  if ($('#s_sealx')) $('#s_sealx').onclick = async () => { seal = ''; await setSetting('biz', read()); render(); };
   $('#s_export').onclick = exportBackup;
   $('#s_import').onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
