@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
