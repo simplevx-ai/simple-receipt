@@ -103,7 +103,7 @@ function checkSend(r, b, opt) {
     if (bc.length) E.push(`${k}에 영수증에 쓸 수 없는 글자(이모지·특수문자)가 있습니다: ${showChars(bc)}`);
   }
   if (opt.withPhoto) {
-    const all = fields.map((f) => f[1] || '').join('') + '영수증공급받는자사업자등록번호상호성명소재지업태종목작성년월일공급대가총액비고위금액을정히청구함품목수량단가합계감사합니다일금원정₩☎';
+    const all = fields.map((f) => f[1] || '').join('') + '영수증공급받는자사업자등록번호상호성명소재지업태종목작성년월일공급대가총액비고위금액을청구함품목수량단가합계감사합니다일금원정₩☎';
     const miss = Glyph.missing(all);
     if (miss.length) E.push(`이 폰 글꼴에 없는 글자가 있어 영수증 사진에서 □로 깨집니다: ${showChars(miss)}`);
     if (!opt.blob || opt.blob.size < 15000) E.push('영수증 사진이 제대로 만들어지지 않았습니다. 화면을 닫았다가 다시 열어 주세요');

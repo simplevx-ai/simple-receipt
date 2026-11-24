@@ -1,7 +1,7 @@
 /* 간이영수증 앱 — 영수증 양식 그리기 (ONE LIFE AI rcptform.js에서 가져옴) */
 /* ───────── 실제 간이영수증 양식(공급받는자용) ─────────
    문구점에서 파는 간이영수증과 같은 칸: 공급자(사업자등록번호·상호·성명·사업장 소재지·업태·종목),
-   작성년월일·공급대가총액·비고, "위 금액을 정히 영수(청구)함", 월일·품목·수량·단가·공급대가, 합계.
+   작성년월일·공급대가총액·비고, "위 금액을 영수(청구)함", 월일·품목·수량·단가·공급대가, 합계.
    사업자 정보는 설정(#/settings)에서 넣는다. 모르는 칸은 비워 둔다(지어내지 않음). */
 
 // 숫자 → 한글 금액(영수증 표기: 일십·일백·일천을 줄이지 않음). 예: 80000 → 팔만
@@ -101,7 +101,7 @@ async function renderFormReceipt(e, T, j, c, b, paid, method) {
   // 영수 문구(해당하는 쪽에 동그라미)
   y += 150;
   box(L, y, IW, 70, 3);
-  txt('위 금액을 정히', W / 2 - 60, y + 35, { size: 30, color: INK, align: 'right', bold: true });
+  txt('위 금액을', W / 2 - 70, y + 35, { size: 30, color: INK, align: 'right', bold: true });
   txt('영수', W / 2 - 10, y + 35, { size: 30, color: INK, align: 'center', bold: true });
   txt('(청구)', W / 2 + 75, y + 35, { size: 30, color: INK, align: 'center', bold: true });
   txt('함.', W / 2 + 140, y + 35, { size: 30, color: INK, bold: true });
