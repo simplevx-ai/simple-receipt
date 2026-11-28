@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.7';
+const APP_VERSION = '1.3.8';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
@@ -497,7 +497,7 @@ async function viewSettings() {
       <label class="btn block" style="margin-top:8px;color:var(--ink)">⬆ 백업 파일로 복원<input id="s_import" type="file" accept="application/json,.json" hidden></label>
       <div class="row" style="margin-top:8px"><select id="s_y" style="flex:1">${[...new Set([todayStr().slice(0, 4), String(+todayStr().slice(0, 4) - 1)])].map((y) => `<option>${y}</option>`).join('')}</select><button class="btn" id="s_csv" type="button">⬇ 연간 영수증 엑셀(CSV)</button></div></div>
     <a class="card" href="#/sent" style="display:block;text-decoration:none"><b>📜 보낸 기록 전체 보기 ›</b></a>
-    <div class="card"><h2>앱 정보</h2><div class="muted">간이영수증 v${APP_VERSION}<br>폰 홈 화면에 추가: 크롬 ⋮ → '홈 화면에 추가' 또는 '앱 설치'</div></div>`;
+    <div class="card"><h2>앱 정보</h2><div class="muted">간이영수증 v${APP_VERSION}<br>폰 홈 화면에 추가: 크롬 ⋮ → '홈 화면에 추가' 또는 '앱 설치'</div>${updButton(APP_VERSION)}</div>`;
   let seals = sealList(b).map((s) => ({ ...s }));
   let sealId = defaultSealId(b);
   const read = () => {
