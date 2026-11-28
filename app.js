@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.5';
+const APP_VERSION = '1.3.6';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
@@ -59,6 +59,12 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const won = (n) => (Number(n) || 0).toLocaleString('ko-KR') + '원';
 const digits = (s) => String(s || '').replace(/\D/g, '');
+const fmtPhone = (s) => { const d = digits(s); return d.length === 11 ? `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}` : d.length === 10 ? (d.startsWith('02') ? `02-${d.slice(2, 6)}-${d.slice(6)}` : `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`) : d; };
+// 문자 앱 주소: 아이폰은 '&body=', 안드로이드(삼성·구글 메시지)는 '?body='
+const IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const smsHref = (to, body) => `sms:${digits(to)}${IS_IOS ? '&' : '?'}body=${encodeURIComponent(body)}`;
+// 외부 앱(문자·메일) 열기: 홈 화면 앱(PWA)에서도 잘 열리게 링크를 눌러 연다
+function openExternal(href) { const a = document.createElement('a'); a.href = href; a.rel = 'noopener'; a.style.display = 'none'; document.body.appendChild(a); a.click(); setTimeout(() => a.remove(), 1000); }
 const pad = (n) => String(n).padStart(2, '0');
 function nowISO(d = new Date()) {
   const o = -d.getTimezoneOffset(), a = Math.abs(o);
@@ -355,8 +361,9 @@ async function viewReceipt(id) {
       await log({ ...base, result: '저장함' }); return;
     }
     if (!withPhoto) {
-      if (channel === 'sms') { await log({ ...base, result: '문자 앱 열림' }); location.href = `sms:${to}?body=${encodeURIComponent(text)}`; return; }
-      if (channel === 'email') { await log({ ...base, result: '메일 앱 열림' }); location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`; return; }
+      // 문자 앱은 누른 직후 바로 연다(기록은 그다음) — 기다리면 폰이 외부 앱 열기를 막을 수 있음
+      if (channel === 'sms') { openExternal(smsHref(to, text)); await log({ ...base, result: '문자 앱 열림' }); return; }
+      if (channel === 'email') { openExternal(`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`); await log({ ...base, result: '메일 앱 열림' }); return; }
       if (navigator.share) {
         try { await navigator.share({ title: subject, text }); await log({ ...base, result: '공유 창에서 보냄' }); }
         catch (e) { await log({ ...base, result: e && e.name === 'AbortError' ? '취소' : '실패', why: e && e.name !== 'AbortError' ? [String(e.message || e)] : undefined }); }
@@ -370,10 +377,20 @@ async function viewReceipt(id) {
       $('#v_err').innerHTML = `<b>${esc(why)}</b>`; $('#v_err').hidden = false;
       await log({ ...base, result: '실패', why: [why] }); alert('⚠️ ' + why); return;
     }
-    if (channel === 'sms') toast(`‘메시지’를 고르고 ${to} 에게 보내세요`);
+    // 공유 창은 받는 사람을 못 채워 주므로 번호를 복사해 둔다(메시지 앱 받는 사람 칸에 붙여 넣기)
+    if (channel === 'sms') { const t = fmtPhone(to); navigator.clipboard?.writeText(t).catch(() => {}); toast(`‘메시지’를 고르세요 · 번호 ${t} 복사됨`); }
     if (channel === 'email') toast(`‘Gmail’을 고르고 ${to} 에게 보내세요`);
     try { await navigator.share(data); await log({ ...base, result: '공유 창에서 보냄' }); toast('보냈습니다(기록 저장)'); }
-    catch (e) { await log({ ...base, result: e && e.name === 'AbortError' ? '취소' : '실패', why: e && e.name !== 'AbortError' ? [String(e.message || e)] : undefined }); }
+    catch (e) {
+      if (e && e.name === 'AbortError') { await log({ ...base, result: '취소' }); return; }
+      const why = String((e && e.message) || e);
+      // 사진 공유가 막힌 폰: 문자는 글만이라도 받는 사람이 채워진 채로 연다
+      if (channel === 'sms' && confirm('이 폰에서는 사진을 문자로 붙이지 못했습니다.\n\n글 영수증만 문자로 보낼까요? (사진은 ‘사진 저장’ 후 직접 첨부)')) {
+        openExternal(smsHref(to, text)); await log({ ...base, what: '글만(사진 실패)', result: '문자 앱 열림', why: [why] }); return;
+      }
+      await log({ ...base, result: '실패', why: [why] });
+      $('#v_err').innerHTML = `<b>보내지 못했습니다</b>: ${esc(why)}<br>‘글만’을 고르거나 ‘사진 저장’ 후 직접 첨부해 주세요.`; $('#v_err').hidden = false;
+    }
   }
 
   if ($('#v_pay')) $('#v_pay').onclick = async () => {
