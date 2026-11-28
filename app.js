@@ -4,7 +4,7 @@
  */
 'use strict';
 
-const APP_VERSION = '1.3.6';
+const APP_VERSION = '1.3.7';
 const METHODS = ['계좌이체', '현금', '카드', '기타'];
 const BACKUP_STORES = ['receipts', 'customers', 'items', 'settings'];
 
@@ -309,6 +309,9 @@ async function viewReceipt(id) {
       <div class="seg" role="radiogroup" aria-label="보낼 내용">${SEND_MODES.map((m) => `<label><input type="radio" name="v_mode" value="${m}"${m === sendMode ? ' checked' : ''}><span>${m === '글+사진' ? '📝🖼 글+사진' : m === '사진만' ? '🖼 사진만' : '📝 글만'}</span></label>`).join('')}</div>
       <div class="grid2" style="margin-top:10px"><button class="btn primary" id="v_sms" type="button">💬 문자</button><button class="btn primary" id="v_mail" type="button">✉️ 이메일</button>
         <button class="btn" id="v_app" type="button">📤 카톡·다른 앱</button><button class="btn" id="v_copy" type="button">📋 글 복사</button></div>
+      <div id="v_photoBox" class="okbox" style="margin-top:10px" hidden><div style="font-size:14px;margin-bottom:8px">💬 문자 앱에 <b>번호·영수증 글</b>을 채워 열었습니다. 전송을 누른 뒤 돌아와서 사진도 보내세요.</div>
+        <button class="btn primary block" id="v_photo" type="button" style="font-size:18px;padding:14px 10px">🖼 사진도 보내기 (공유 창)</button>
+        <div class="muted" style="font-size:12px;margin-top:6px">공유 창에서 ‘메시지’를 고르고 받는 사람 칸에 붙여 넣기 하세요(번호는 눌렀을 때 복사됨).</div></div>
       <button class="btn block" id="v_save" type="button" style="margin-top:8px">⬇ 사진 저장</button>
       <div id="v_hint" class="muted" style="font-size:12px;margin-top:6px"></div>
       <div id="v_err" class="errbox" role="alert" hidden></div></div>
@@ -330,27 +333,54 @@ async function viewReceipt(id) {
   const mode = () => (view().querySelector('[name=v_mode]:checked') || {}).value || '글+사진';
   const hint = () => {
     const m = mode();
-    $('#v_hint').textContent = m === '글만' ? '문자·이메일 앱이 받는 사람과 글이 채워진 채로 열립니다.'
-      : '사진이 들어가면 폰의 공유 창이 열립니다. 문자는 ‘메시지’, 이메일은 ‘Gmail’을 고르고 받는 사람을 선택하세요(웹앱은 문자 앱에 사진을 직접 붙일 수 없음).';
+    $('#v_hint').textContent = m === '글만' ? '💬 문자·✉️ 이메일을 누르면 받는 사람과 글이 채워진 채로 바로 열립니다. 전송만 누르면 됩니다.'
+      : '💬 문자는 누르면 번호·영수증 글이 채워진 문자 앱이 바로 열리고, 돌아오면 ‘사진도 보내기’ 버튼이 나옵니다(웹앱은 문자 앱에 사진을 직접 붙일 수 없음). 이메일·카톡은 공유 창이 열립니다.';
   };
   view().querySelectorAll('[name=v_mode]').forEach((el) => { el.onchange = () => { try { localStorage.setItem('sendMode', mode()); } catch { /* 저장 안 돼도 됨 */ } hint(); $('#v_err').hidden = true; }; });
   hint();
   const VIA = { sms: '문자', email: '이메일', app: '카톡·다른 앱', copy: '글 복사', save: '사진 저장' };
+  let pendingPhoto = null; // 문자로 글을 연 뒤 사진을 보낼 번호
+  // 🖼 사진도 보내기: 문자 앱이 닫힌 뒤 공유 창으로 영수증 사진만 보낸다(받는 사람 번호는 복사해 둠)
+  async function sendPhotoAfterSms() {
+    const to = pendingPhoto || digits($('#v_phone').value), t = fmtPhone(to);
+    const base = { via: '문자', what: '사진', to, total: totals(await DB.get('receipts', id)).total };
+    const data = { files: [file], title: subject };
+    if (!(navigator.canShare && navigator.canShare(data))) {
+      const why = '이 기기(브라우저)는 사진을 공유할 수 없습니다. ‘사진 저장’ 후 문자에 직접 첨부해 주세요';
+      $('#v_err').innerHTML = `<b>${esc(why)}</b>`; $('#v_err').hidden = false; await log({ ...base, result: '실패', why: [why] }); return;
+    }
+    navigator.clipboard?.writeText(t).catch(() => {});
+    toast(`‘메시지’를 고르세요 · 번호 ${t} 복사됨`);
+    try { await navigator.share(data); await log({ ...base, result: '공유 창에서 보냄' }); $('#v_photoBox').hidden = true; pendingPhoto = null; toast('사진도 보냈습니다(기록 저장)'); }
+    catch (e) {
+      const ab = e && e.name === 'AbortError';
+      await log({ ...base, result: ab ? '취소' : '실패', why: ab ? undefined : [String((e && e.message) || e)] });
+      if (!ab) { $('#v_err').innerHTML = `<b>사진을 보내지 못했습니다</b>: ${esc(String((e && e.message) || e))}<br>‘사진 저장’ 후 문자에 직접 첨부해 주세요.`; $('#v_err').hidden = false; }
+    }
+  }
   async function send(channel) {
     const m = channel === 'copy' ? '글만' : channel === 'save' ? '사진만' : mode();
-    const withText = m !== '사진만', withPhoto = m !== '글만';
+    // 문자는 고른 내용과 상관없이 번호·영수증 글을 채워 바로 연다(사진은 그다음 버튼으로)
+    const withText = channel === 'sms' ? true : m !== '사진만', withPhoto = m !== '글만';
     const to = channel === 'sms' ? digits($('#v_phone').value) : channel === 'email' ? $('#v_email').value.trim() : '';
     const rr = { ...(await DB.get('receipts', id)) };
     const errs = checkSend(rr, b, { channel, withText, withPhoto, to, text, blob });
     const base = { via: VIA[channel], what: m, to, total: totals(rr).total };
     if (errs.length) {
       $('#v_err').innerHTML = `<b>보내지 않았습니다. 아래를 고친 뒤 다시 보내 주세요.</b><ul>${errs.map((e) => `<li>${esc(e)}</li>`).join('')}</ul>`;
-      $('#v_err').hidden = false; $('#v_err').scrollIntoView({ block: 'center' });
+      $('#v_err').hidden = false; $('#v_photoBox').hidden = true; $('#v_err').scrollIntoView({ block: 'center' });
       await log({ ...base, result: '막힘', why: errs });
       alert('⚠️ 보내지 않았습니다\n\n' + errs.map((e) => '• ' + e).join('\n'));
       return;
     }
     $('#v_err').hidden = true;
+    if (channel === 'sms') {
+      openExternal(smsHref(to, text)); // 누르자마자 연다(기록은 그다음)
+      await log({ ...base, what: withPhoto ? '글(사진은 다음)' : '글만', result: '문자 앱 열림' });
+      pendingPhoto = withPhoto ? to : null;
+      $('#v_photoBox').hidden = !withPhoto;
+      return;
+    }
     if (channel === 'copy') {
       try { await navigator.clipboard.writeText(text); toast('영수증 글을 복사했습니다'); await log({ ...base, result: '복사함' }); }
       catch { prompt('복사해서 쓰세요', text); await log({ ...base, result: '복사 창 열림' }); }
@@ -406,6 +436,7 @@ async function viewReceipt(id) {
     await DB.put('receipts', { ...rr, payments: (rr.payments || []).filter((p) => p.id !== bt.dataset.delpay) }); render();
   }; });
   $('#v_sms').onclick = () => send('sms');
+  $('#v_photo').onclick = () => sendPhotoAfterSms();
   $('#v_mail').onclick = () => send('email');
   $('#v_app').onclick = () => send('app');
   $('#v_copy').onclick = () => send('copy');
